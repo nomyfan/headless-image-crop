@@ -1,6 +1,11 @@
 import { clamp } from "@callcc/toolkit-js/clamp";
 
-import { Rect } from "./Rect";
+import { DataRect } from "./DataRect";
+
+export type DataBox = {
+  inner: DataRect;
+  outer: DataRect;
+};
 
 export class NestedBox {
   /**
@@ -8,13 +13,13 @@ export class NestedBox {
    * Gain via `getBoundingClientRect`.
    * @private
    */
-  private readonly _inner: Rect;
+  private readonly _inner: DataRect;
   /**
    * Size and position of outer box in the viewport.
    * Gain via `getBoundingClientRect`.
    * @private
    */
-  private readonly _outer: Rect;
+  private readonly _outer: DataRect;
 
   private readonly _minWidth: number;
   private readonly _minHeight: number;
@@ -36,8 +41,8 @@ export class NestedBox {
         }
       | undefined,
   ) {
-    this._inner = new Rect(left, top, right, bottom);
-    this._outer = new Rect(left, top, right, bottom);
+    this._inner = new DataRect(left, top, right, bottom);
+    this._outer = new DataRect(left, top, right, bottom);
 
     this._minWidth = minWidth;
     this._minHeight = minHeight;
@@ -64,6 +69,10 @@ export class NestedBox {
       this.moveRightLine(this._inner.left + w);
       this.moveBottomLine(this._inner.top + h);
     }
+  }
+
+  toDataBox(): DataBox {
+    return { inner: this._inner.clone(), outer: this._outer.clone() };
   }
 
   get outer() {

@@ -12,6 +12,7 @@ import {
   useImperativeHandle,
 } from "react";
 
+import type { DataBox } from "./NestedBox";
 import { NestedBox } from "./NestedBox";
 import type { IDirection } from "./types";
 
@@ -28,7 +29,7 @@ export const useCropClipContext = () => useContext(CropClipContext);
 
 type ICropContext = {
   commitHandle?: Ref<{
-    commit?: (nBox: NestedBox) => void;
+    commit?: (box: DataBox) => void;
   }>;
 };
 const CropContext = createContext<ICropContext>({});
@@ -111,10 +112,9 @@ function CropClipImpl(props: ICropClipProps) {
   const maskRectRef = useRef<SVGRectElement>(null);
 
   useImperativeHandle(cropContext.commitHandle, () => ({
-    commit: (nBox: NestedBox) => {
+    commit: ({ outer, inner }: DataBox) => {
       const clip = clipRef.current;
       if (clip) {
-        const { inner, outer } = nBox;
         clip.style.left = inner.left - outer.left + "px";
         clip.style.top = inner.top - outer.top + "px";
         clip.style.right = outer.right - inner.right + "px";
@@ -218,7 +218,7 @@ export function Crop(props: ICropProps) {
   const minHeight = props.minHeight ?? 0;
 
   const commitRef = useRef<{
-    commit?: (nBox: NestedBox) => void;
+    commit?: (box: DataBox) => void;
   }>(null);
 
   const contentBoxRef = useRefCallback(
@@ -226,12 +226,7 @@ export function Crop(props: ICropProps) {
       const observer = new ResizeObserver((entries) => {
         const rect = entries[0].target.getBoundingClientRect();
         const rectPrev = nBoxRef.current.outer;
-        if (
-          rectPrev.left !== rect.left ||
-          rectPrev.top !== rect.top ||
-          rectPrev.right !== rect.right ||
-          rectPrev.bottom !== rect.bottom
-        ) {
+        if (!rectPrev.equal(rect)) {
           nBoxRef.current = new NestedBox(
             rect.left,
             rect.top,
@@ -242,7 +237,7 @@ export function Crop(props: ICropProps) {
             props.initialRect,
           );
           if (props.initialRect) {
-            commitRef.current?.commit?.(nBoxRef.current);
+            commitRef.current?.commit?.(nBoxRef.current.toDataBox());
           }
         }
       });
@@ -310,8 +305,9 @@ export function Crop(props: ICropProps) {
           );
         }
         if (commitRef.current?.commit) {
+          const box = nBox.toDataBox();
           rAFId = requestAnimationFrame(() => {
-            commitRef.current?.commit?.(nBox);
+            commitRef.current?.commit?.(box);
           });
         }
       }
