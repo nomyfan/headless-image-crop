@@ -245,6 +245,7 @@ export function Crop(props: ICropProps) {
       style={{
         position: "relative",
         width: "fit-content",
+        height: "fit-content",
         minWidth,
         minHeight,
         ...props.containerStyle,
