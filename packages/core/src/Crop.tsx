@@ -24,6 +24,7 @@ type ICropClipContext = {
 const CropClipContext = createContext<ICropClipContext>({
   ref: createRef(),
 });
+export const useCropClipContext = () => useContext(CropClipContext);
 
 type ICropContext = {
   commitHandle?: Ref<{
@@ -31,6 +32,7 @@ type ICropContext = {
   }>;
 };
 const CropContext = createContext<ICropContext>({});
+export const useCropContext = () => useContext(CropContext);
 
 export type ICropProps = PropsWithChildren<{
   style?: CSSProperties;
@@ -101,8 +103,8 @@ export interface ICropClipProps {
 }
 
 function CropClipImpl(props: ICropClipProps) {
-  const cropContext = useContext(CropContext);
-  const cropClipContext = useContext(CropClipContext);
+  const cropContext = useCropContext();
+  const cropClipContext = useCropClipContext();
   const id = useId();
 
   const clipRef = useRef<HTMLDivElement>(null);
