@@ -1,26 +1,56 @@
 import { useMutableRef } from "@callcc/toolkit-js/react/useMutableRef";
-import type { CSSProperties, PropsWithChildren } from "react";
-import { useCallback, useId, useLayoutEffect, useMemo, useRef } from "react";
+import { useRefCallback } from "@callcc/toolkit-js/react/useRefCallback";
+import type { CSSProperties, PropsWithChildren, Ref } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  createContext,
+  useContext,
+  createRef,
+  useImperativeHandle,
+} from "react";
 
 import { NestedBox } from "./NestedBox";
 import type { IDirection } from "./types";
 
+type ICropClipContext = {
+  ref: Ref<Element>;
+  onClipStart?: (dir: IDirection) => void;
+  onMoveStart?: () => void;
+};
+
+const CropClipContext = createContext<ICropClipContext>({
+  ref: createRef(),
+});
+
+type ICropContext = {
+  commitHandle?: Ref<{
+    commit?: (nBox: NestedBox) => void;
+  }>;
+};
+const CropContext = createContext<ICropContext>({});
+
 export type ICropProps = PropsWithChildren<{
-  containerStyle?: CSSProperties;
-  containerClassName?: string;
-  clipStyle?: CSSProperties;
-  clipClassName?: string;
+  style?: CSSProperties;
+  className?: string;
   minHeight?: number;
   minWidth?: number;
-  handleClassName?: string;
-  handles?: IDirection[];
-  mask?: {
-    fill?: string;
-    fillOpacity?: number;
-  };
-  // TODO: handle callback deps lint error
+  /**
+   * It's your responsibility to make sure the callback is stable.
+   * @param dir
+   */
   onStart?: (dir?: IDirection) => void;
+  /**
+   * It's your responsibility to make sure the callback is stable.
+   * @param rect
+   */
   onDrag?: (rect: DOMRectReadOnly) => void;
+  /**
+   * It's your responsibility to make sure the callback is stable.
+   * @param rect
+   */
   onEnd?: (rect: DOMRectReadOnly) => void;
   /**
    * Size and position of inner box in the outer box.
@@ -61,20 +91,25 @@ function Handle(props: {
   );
 }
 
-export function Crop(props: ICropProps) {
-  const reactId = useId();
-  // Used to measure the size of content box of the container.
-  const contentBoxRef = useRef<SVGSVGElement>(null);
+export interface ICropClipProps {
+  fill?: string;
+  fillOpacity?: number;
+  className?: string;
+  style?: CSSProperties;
+  handles?: IDirection[];
+  handleClassName?: string;
+}
+
+function CropClipImpl(props: ICropClipProps) {
+  const cropContext = useContext(CropContext);
+  const cropClipContext = useContext(CropClipContext);
+  const id = useId();
+
   const clipRef = useRef<HTMLDivElement>(null);
+  const maskRectRef = useRef<SVGRectElement>(null);
 
-  const minWidth = props.minWidth ?? 0;
-  const minHeight = props.minHeight ?? 0;
-
-  const movingArea = useRef(false);
-  const movingHandle = useRef<"" | IDirection>("");
-
-  const commit = useCallback(
-    (nBox: NestedBox) => {
+  useImperativeHandle(cropContext.commitHandle, () => ({
+    commit: (nBox: NestedBox) => {
       const clip = clipRef.current;
       if (clip) {
         const { inner, outer } = nBox;
@@ -83,9 +118,7 @@ export function Crop(props: ICropProps) {
         clip.style.right = outer.right - inner.right + "px";
         clip.style.bottom = outer.bottom - inner.bottom + "px";
 
-        const maskRect = document.getElementById(
-          `${reactId}-mask-rect`,
-        ) as SVGRectElement | null;
+        const maskRect = maskRectRef.current;
         if (maskRect) {
           maskRect.setAttribute("x", inner.left - outer.left + "px");
           maskRect.setAttribute("y", inner.top - outer.top + "px");
@@ -94,46 +127,141 @@ export function Crop(props: ICropProps) {
         }
       }
     },
-    [reactId],
+  }));
+
+  const handles = useMemo(() => {
+    const dirs: IDirection[] = props.handles ?? [
+      "left",
+      "left-top",
+      "top",
+      "right-top",
+      "right",
+      "right-bottom",
+      "bottom",
+      "left-bottom",
+    ];
+
+    return dirs.map((dir) => {
+      return (
+        <Handle
+          key={dir}
+          className={props.handleClassName}
+          dir={dir}
+          onStart={() => cropClipContext.onClipStart?.(dir)}
+        />
+      );
+    });
+  }, [cropClipContext, props.handleClassName, props.handles]);
+
+  return (
+    <>
+      <svg
+        ref={cropClipContext.ref as Ref<SVGSVGElement>}
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          width: "100%",
+          height: "100%",
+        }}
+      >
+        <defs>
+          <mask id={`${id}-mask`}>
+            <rect width="100%" height="100%" fill="white" />
+            <rect
+              ref={maskRectRef}
+              x={0}
+              y={0}
+              width="100%"
+              height="100%"
+              fill="black"
+            />
+          </mask>
+        </defs>
+        <rect
+          fill={props.fill}
+          fillOpacity={props.fillOpacity ?? 0.5}
+          width="100%"
+          height="100%"
+          mask={`url(#${id}-mask)`}
+        />
+      </svg>
+
+      <div
+        ref={clipRef}
+        className={props.className}
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          right: 0,
+          bottom: 0,
+          ...props.style,
+        }}
+        onMouseDown={() => cropClipContext.onMoveStart?.()}
+      >
+        {handles}
+      </div>
+    </>
   );
+}
+
+export function CropClip(props: PropsWithChildren<ICropClipProps>) {
+  const { children, ...clipProps } = props;
+  return children ?? <CropClipImpl {...clipProps} />;
+}
+
+export function Crop(props: ICropProps) {
+  const minWidth = props.minWidth ?? 0;
+  const minHeight = props.minHeight ?? 0;
+
+  const commitRef = useRef<{
+    commit?: (nBox: NestedBox) => void;
+  }>(null);
+
+  const contentBoxRef = useRefCallback(
+    (element: Element) => {
+      const observer = new ResizeObserver((entries) => {
+        const rect = entries[0].target.getBoundingClientRect();
+        const rectPrev = nBoxRef.current.outer;
+        if (
+          rectPrev.left !== rect.left ||
+          rectPrev.top !== rect.top ||
+          rectPrev.right !== rect.right ||
+          rectPrev.bottom !== rect.bottom
+        ) {
+          nBoxRef.current = new NestedBox(
+            rect.left,
+            rect.top,
+            rect.right,
+            rect.bottom,
+            minWidth,
+            minHeight,
+            props.initialRect,
+          );
+          if (props.initialRect) {
+            commitRef.current?.commit?.(nBoxRef.current);
+          }
+        }
+      });
+
+      observer.observe(element, { box: "border-box" });
+      return () => observer.unobserve(element);
+    },
+    [minHeight, minWidth],
+  );
+
+  const movingArea = useRef(false);
+  const movingHandle = useRef<"" | IDirection>("");
 
   const nBoxRef = useMutableRef(() => {
     return new NestedBox(0, 0, 0, 0, 0, 0);
   });
 
   useLayoutEffect(() => {
-    const observer = new ResizeObserver((entries) => {
-      const rect = entries[0].target.getBoundingClientRect();
-      const rectPrev = nBoxRef.current.outer;
-      if (
-        rectPrev.left !== rect.left ||
-        rectPrev.top !== rect.top ||
-        rectPrev.right !== rect.right ||
-        rectPrev.bottom !== rect.bottom
-      ) {
-        nBoxRef.current = new NestedBox(
-          rect.left,
-          rect.top,
-          rect.right,
-          rect.bottom,
-          minWidth,
-          minHeight,
-          props.initialRect,
-        );
-        if (props.initialRect) {
-          commit(nBoxRef.current);
-        }
-      }
-    });
-
-    const element = contentBoxRef.current!;
-    observer.observe(element, { box: "border-box" });
-
-    return () => observer.unobserve(element);
-  }, [minHeight, minWidth]);
-
-  useLayoutEffect(() => {
     let moved = false;
+    let rAFId: number;
+
     const handleMove = (evt: MouseEvent) => {
       const nBox = nBoxRef.current;
       if (movingHandle.current) {
@@ -179,7 +307,11 @@ export function Crop(props: ICropProps) {
             ),
           );
         }
-        requestAnimationFrame(commit.bind(null, nBox));
+        if (commitRef.current?.commit) {
+          rAFId = requestAnimationFrame(() => {
+            commitRef.current?.commit?.(nBox);
+          });
+        }
       }
     };
 
@@ -208,100 +340,42 @@ export function Crop(props: ICropProps) {
     return () => {
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
+      rAFId && cancelAnimationFrame(rAFId);
     };
-  }, [reactId]);
-
-  const handleStart = useCallback((dir: IDirection) => {
-    movingHandle.current = dir;
   }, []);
 
-  const handles = useMemo(() => {
-    const dirs: IDirection[] = props.handles ?? [
-      "left",
-      "left-top",
-      "top",
-      "right-top",
-      "right",
-      "right-bottom",
-      "bottom",
-      "left-bottom",
-    ];
+  const cropContext = useMemo(() => {
+    return {
+      commitHandle: commitRef,
+    } satisfies ICropContext;
+  }, []);
 
-    return dirs.map((dir) => {
-      return (
-        <Handle
-          key={dir}
-          className={props.handleClassName}
-          dir={dir}
-          onStart={handleStart}
-        />
-      );
-    });
-  }, [handleStart, props.handleClassName, props.handles]);
+  const cropClipContext = useMemo(() => {
+    return {
+      ref: contentBoxRef,
+      onMoveStart: () => {
+        movingArea.current = true;
+      },
+      onClipStart: (dir: IDirection) => {
+        movingHandle.current = dir;
+      },
+    } satisfies ICropClipContext;
+  }, [contentBoxRef]);
 
   return (
-    <div
-      className={props.containerClassName}
-      style={{
-        position: "relative",
-        width: "fit-content",
-        height: "fit-content",
-        minWidth,
-        minHeight,
-        ...props.containerStyle,
-      }}
-    >
-      {props.children}
-
-      <svg
-        ref={contentBoxRef}
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          width: "100%",
-          height: "100%",
-        }}
-      >
-        <defs>
-          <mask id={`${reactId}-mask`}>
-            <rect width="100%" height="100%" fill="white" />
-            <rect
-              id={`${reactId}-mask-rect`}
-              x={0}
-              y={0}
-              width="100%"
-              height="100%"
-              fill="black"
-            />
-          </mask>
-        </defs>
-        <rect
-          fill={props.mask?.fill}
-          fillOpacity={props.mask?.fillOpacity ?? 0.5}
-          width="100%"
-          height="100%"
-          mask={`url(#${reactId}-mask)`}
-        />
-      </svg>
-
-      <div
-        ref={clipRef}
-        className={props.clipClassName}
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          right: 0,
-          bottom: 0,
-          ...props.clipStyle,
-        }}
-        onMouseDown={() => {
-          movingArea.current = true;
-        }}
-      >
-        {handles}
-      </div>
-    </div>
+    <CropContext.Provider value={cropContext}>
+      <CropClipContext.Provider value={cropClipContext}>
+        <div
+          className={props.className}
+          style={{
+            minWidth,
+            minHeight,
+            ...props.style,
+          }}
+        >
+          {props.children}
+        </div>
+      </CropClipContext.Provider>
+    </CropContext.Provider>
   );
 }

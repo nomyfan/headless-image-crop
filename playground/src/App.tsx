@@ -1,7 +1,7 @@
 import { cn } from "@callcc/toolkit-js/cn";
 import { useRefCallback } from "@callcc/toolkit-js/react/useRefCallback";
 import type { IDirection } from "headless-image-crop";
-import { Crop } from "headless-image-crop";
+import { Crop, CropClip } from "headless-image-crop";
 import { useMemo, useRef, useState } from "react";
 
 import styles from "./styles.module.css";
@@ -61,20 +61,20 @@ function Mirror(props: { file?: File }) {
     <div className="flex">
       <Crop
         key={key}
-        containerClassName="select-none flex-basis-0 flex-grow"
-        clipClassName={cn(styles.clip, styles.marching_ants)}
-        handleClassName={cn(
-          "rounded-full bg-indigo-500 b-solid b-2 b-white h-12px w-12px box-border",
-        )}
-        handles={handles}
-        minWidth={24}
+        className="select-none flex-basis-0 flex-grow relative w-fit h-fit"
         minHeight={24}
+        minWidth={24}
+        onStart={() => {
+          console.log("start");
+        }}
         onDrag={(rect) => {
+          console.log("drag");
           const img = imgRef.current!;
           const canvas = canvasRef.current!;
           draw(canvas, img, rect);
         }}
         onEnd={(rect) => {
+          console.log("end");
           const img = imgRef.current!;
           const canvas = canvasRef.current!;
           draw(canvas, img, rect);
@@ -106,6 +106,11 @@ function Mirror(props: { file?: File }) {
               ),
             );
           }}
+        />
+        <CropClip
+          handles={handles}
+          className={cn(styles.clip, styles.marching_ants)}
+          handleClassName="rounded-full bg-indigo-500 b-solid b-2 b-white h-12px w-12px box-border"
         />
       </Crop>
 
