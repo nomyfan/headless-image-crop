@@ -1,0 +1,26 @@
+{
+  "name": "headless-image-crop",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "pnpm tsc -p ./tsconfig.json",
+    "dev": "pnpm tsc -w -p ./tsconfig.json"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@types/react": "^18.3.4",
+    "@types/react-dom": "^18.3.0"
+  },
+  "dependencies": {
+    "@callcc/toolkit-js": "^0.1.0"
+  }
+}
