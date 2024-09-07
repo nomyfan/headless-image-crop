@@ -55,6 +55,7 @@ export function CropHandle(props: {
     <div
       className={props.className}
       data-handle-dir={dir}
+      style={props.style}
       onMouseDown={(evt) => {
         evt.stopPropagation();
         ctx.onHandleDrag?.(dir);
