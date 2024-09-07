@@ -1,3 +1,4 @@
+import { useImmutableRef } from "@callcc/toolkit-js/react/useImmutableRef";
 import { useMutableRef } from "@callcc/toolkit-js/react/useMutableRef";
 import { useRefCallback } from "@callcc/toolkit-js/react/useRefCallback";
 import type { CSSProperties, PropsWithChildren } from "react";
@@ -104,7 +105,7 @@ export function Crop(props: ICropProps) {
     onEnd: onEndProp,
   } = props;
 
-  const dataBox$Ref = useMutableRef(() => new Subscribable<DataBox>());
+  const dataBox$Ref = useImmutableRef(() => new Subscribable<DataBox>());
   const nBoxRef = useMutableRef(() => {
     return new NestedBox(0, 0, 0, 0, 0, 0);
   });
