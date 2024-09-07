@@ -1,6 +1,6 @@
 {
   "name": "headless-image-crop",
-  "version": "0.1.0",
+  "version": "0.1.1-beta.0",
   "scripts": {
     "build": "pnpm tsc -p ./tsconfig.json",
     "dev": "pnpm tsc -w -p ./tsconfig.json"
@@ -21,6 +21,6 @@
     "@types/react-dom": "^18.3.0"
   },
   "dependencies": {
-    "@callcc/toolkit-js": "^0.1.0"
+    "@callcc/toolkit-js": "~0.1.1"
   }
 }

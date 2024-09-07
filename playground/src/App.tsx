@@ -1,7 +1,7 @@
 import { cn } from "@callcc/toolkit-js/cn";
 import { useRefCallback } from "@callcc/toolkit-js/react/useRefCallback";
 import type { IDirection } from "headless-image-crop";
-import { Crop } from "headless-image-crop";
+import { Crop, CropMask, CropArea, CropHandle } from "headless-image-crop";
 import { useMemo, useRef, useState } from "react";
 
 import styles from "./styles.module.css";
@@ -27,7 +27,16 @@ function draw(
   ctx.drawImage(img, x, y, width, height, 0, 0, width, height);
 }
 
-const handles = ["top", "bottom", "left", "right"] satisfies IDirection[];
+const handles: IDirection[] = [
+  "top",
+  "bottom",
+  "left",
+  "right",
+  "left-top",
+  "left-bottom",
+  "right-top",
+  "right-bottom",
+];
 
 function Mirror(props: { file?: File }) {
   const { file } = props;
@@ -61,20 +70,20 @@ function Mirror(props: { file?: File }) {
     <div className="flex">
       <Crop
         key={key}
-        containerClassName="select-none flex-basis-0 flex-grow"
-        clipClassName={cn(styles.clip, styles.marching_ants)}
-        handleClassName={cn(
-          "rounded-full bg-indigo-500 b-solid b-2 b-white h-12px w-12px box-border",
-        )}
-        handles={handles}
-        minWidth={24}
+        className="select-none flex-basis-0 flex-grow relative w-fit h-fit"
         minHeight={24}
+        minWidth={24}
+        onStart={() => {
+          console.log("start");
+        }}
         onDrag={(rect) => {
+          console.log("drag");
           const img = imgRef.current!;
           const canvas = canvasRef.current!;
           draw(canvas, img, rect);
         }}
         onEnd={(rect) => {
+          console.log("end");
           const img = imgRef.current!;
           const canvas = canvasRef.current!;
           draw(canvas, img, rect);
@@ -107,6 +116,35 @@ function Mirror(props: { file?: File }) {
             );
           }}
         />
+
+        <CropMask />
+
+        <CropArea className={cn(styles.clip, styles.marching_ants, "absolute")}>
+          {handles.map((dir) => {
+            const left = dir.includes("left");
+            const top = dir.includes("top");
+            return (
+              <CropHandle
+                key={dir}
+                dir={dir}
+                className={cn(
+                  "rounded-full bg-indigo-500 b-solid b-2 b-white h-12px w-12px box-border absolute",
+                  left
+                    ? "left-0"
+                    : dir === "top" || dir === "bottom"
+                      ? "left-1/2"
+                      : "left-100%",
+                  top
+                    ? "top-0"
+                    : dir === "left" || dir === "right"
+                      ? "top-1/2"
+                      : "top-100%",
+                  "transform -translate-x-1/2 -translate-y-1/2",
+                )}
+              />
+            );
+          })}
+        </CropArea>
       </Crop>
 
       <div className="flex-basis-0 flex-grow">

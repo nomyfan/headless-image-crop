@@ -1,26 +1,88 @@
+import { useImmutableRef } from "@callcc/toolkit-js/react/useImmutableRef";
 import { useMutableRef } from "@callcc/toolkit-js/react/useMutableRef";
+import { useRefCallback } from "@callcc/toolkit-js/react/useRefCallback";
 import type { CSSProperties, PropsWithChildren } from "react";
-import { useCallback, useId, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  createContext,
+  useContext,
+} from "react";
 
+import type { DataBox } from "./NestedBox";
 import { NestedBox } from "./NestedBox";
 import type { IDirection } from "./types";
 
+class Subscribable<T> {
+  private listeners_: Set<(value: T) => void> = new Set();
+
+  subscribe(listener: (value: T) => void) {
+    this.listeners_.add(listener);
+    return () => {
+      this.listeners_.delete(listener);
+    };
+  }
+
+  notify(value: T) {
+    for (const listener of this.listeners_) {
+      listener(value);
+    }
+  }
+}
+
+type ICropContext = {
+  onHandleDrag?: (dir: IDirection) => void;
+  onAreaMove?: () => void;
+  dataBox$: Subscribable<DataBox>;
+};
+const CropContext = createContext<ICropContext>({
+  dataBox$: new Subscribable(),
+});
+
+const useCropContext = () => useContext(CropContext);
+
+export function CropHandle(props: {
+  className?: string;
+  style?: CSSProperties;
+  dir: IDirection;
+}) {
+  const ctx = useCropContext();
+  const dir = props.dir;
+
+  return (
+    <div
+      className={props.className}
+      data-handle-dir={dir}
+      style={props.style}
+      onMouseDown={(evt) => {
+        evt.stopPropagation();
+        ctx.onHandleDrag?.(dir);
+      }}
+    />
+  );
+}
+
 export type ICropProps = PropsWithChildren<{
-  containerStyle?: CSSProperties;
-  containerClassName?: string;
-  clipStyle?: CSSProperties;
-  clipClassName?: string;
+  style?: CSSProperties;
+  className?: string;
   minHeight?: number;
   minWidth?: number;
-  handleClassName?: string;
-  handles?: IDirection[];
-  mask?: {
-    fill?: string;
-    fillOpacity?: number;
-  };
-  // TODO: handle callback deps lint error
+  /**
+   * It's your responsibility to make sure the callback is stable.
+   * @param dir
+   */
   onStart?: (dir?: IDirection) => void;
+  /**
+   * It's your responsibility to make sure the callback is stable.
+   * @param rect
+   */
   onDrag?: (rect: DOMRectReadOnly) => void;
+  /**
+   * It's your responsibility to make sure the callback is stable.
+   * @param rect
+   */
   onEnd?: (rect: DOMRectReadOnly) => void;
   /**
    * Size and position of inner box in the outer box.
@@ -34,106 +96,55 @@ export type ICropProps = PropsWithChildren<{
   };
 }>;
 
-function Handle(props: {
-  className?: string;
-  dir: IDirection;
-  onStart: (dir: IDirection) => void;
-}) {
-  const dir = props.dir;
-  const left = props.dir.includes("left");
-  const top = props.dir.includes("top");
-
-  return (
-    <div
-      className={props.className}
-      data-handle-dir={dir}
-      onMouseDown={(evt) => {
-        evt.stopPropagation();
-        props.onStart(props.dir);
-      }}
-      style={{
-        position: "absolute",
-        left: left ? 0 : dir === "top" || dir === "bottom" ? "50%" : "100%",
-        top: top ? 0 : dir === "left" || dir === "right" ? "50%" : "100%",
-        transform: "translate(-50%, -50%)",
-      }}
-    />
-  );
-}
-
 export function Crop(props: ICropProps) {
-  const reactId = useId();
-  // Used to measure the size of content box of the container.
-  const contentBoxRef = useRef<SVGSVGElement>(null);
-  const clipRef = useRef<HTMLDivElement>(null);
+  const {
+    minWidth,
+    minHeight,
+    initialRect,
+    onStart: onStartProp,
+    onDrag: onDragProp,
+    onEnd: onEndProp,
+  } = props;
 
-  const minWidth = props.minWidth ?? 0;
-  const minHeight = props.minHeight ?? 0;
-
-  const movingArea = useRef(false);
-  const movingHandle = useRef<"" | IDirection>("");
-
-  const commit = useCallback(
-    (nBox: NestedBox) => {
-      const clip = clipRef.current;
-      if (clip) {
-        const { inner, outer } = nBox;
-        clip.style.left = inner.left - outer.left + "px";
-        clip.style.top = inner.top - outer.top + "px";
-        clip.style.right = outer.right - inner.right + "px";
-        clip.style.bottom = outer.bottom - inner.bottom + "px";
-
-        const maskRect = document.getElementById(
-          `${reactId}-mask-rect`,
-        ) as SVGRectElement | null;
-        if (maskRect) {
-          maskRect.setAttribute("x", inner.left - outer.left + "px");
-          maskRect.setAttribute("y", inner.top - outer.top + "px");
-          maskRect.setAttribute("width", inner.width + "px");
-          maskRect.setAttribute("height", inner.height + "px");
-        }
-      }
-    },
-    [reactId],
-  );
-
+  const dataBox$Ref = useImmutableRef(() => new Subscribable<DataBox>());
   const nBoxRef = useMutableRef(() => {
     return new NestedBox(0, 0, 0, 0, 0, 0);
   });
 
-  useLayoutEffect(() => {
-    const observer = new ResizeObserver((entries) => {
-      const rect = entries[0].target.getBoundingClientRect();
-      const rectPrev = nBoxRef.current.outer;
-      if (
-        rectPrev.left !== rect.left ||
-        rectPrev.top !== rect.top ||
-        rectPrev.right !== rect.right ||
-        rectPrev.bottom !== rect.bottom
-      ) {
-        nBoxRef.current = new NestedBox(
-          rect.left,
-          rect.top,
-          rect.right,
-          rect.bottom,
-          minWidth,
-          minHeight,
-          props.initialRect,
-        );
-        if (props.initialRect) {
-          commit(nBoxRef.current);
+  const contentBoxRef = useRefCallback(
+    (element: Element) => {
+      const observer = new ResizeObserver((entries) => {
+        const rect = entries[0].target.getBoundingClientRect();
+        const rectPrev = nBoxRef.current.outer;
+        if (!rectPrev.equal(rect)) {
+          nBoxRef.current = new NestedBox(
+            rect.left,
+            rect.top,
+            rect.right,
+            rect.bottom,
+            minWidth,
+            minHeight,
+            initialRect,
+          );
+          if (initialRect) {
+            dataBox$Ref.current.notify(nBoxRef.current.toDataBox());
+          }
         }
-      }
-    });
+      });
 
-    const element = contentBoxRef.current!;
-    observer.observe(element, { box: "border-box" });
+      observer.observe(element, { box: "border-box" });
+      return () => observer.unobserve(element);
+    },
+    [minHeight, minWidth],
+  );
 
-    return () => observer.unobserve(element);
-  }, [minHeight, minWidth]);
+  const movingArea = useRef(false);
+  const movingHandle = useRef<"" | IDirection>("");
 
   useLayoutEffect(() => {
     let moved = false;
+    let rAFId: number;
+
     const handleMove = (evt: MouseEvent) => {
       const nBox = nBoxRef.current;
       if (movingHandle.current) {
@@ -162,15 +173,13 @@ export function Crop(props: ICropProps) {
 
       if ((movingHandle.current || movingArea.current) && !moved) {
         moved = true;
-        if (props.onStart) {
-          props.onStart(movingHandle.current || undefined);
-        }
+        onStartProp?.(movingHandle.current || undefined);
       }
 
       if (movingHandle.current || movingArea.current) {
-        if (props.onDrag) {
+        if (onDragProp) {
           const { inner, outer } = nBoxRef.current;
-          props.onDrag(
+          onDragProp(
             new DOMRectReadOnly(
               inner.left - outer.left,
               inner.top - outer.top,
@@ -179,15 +188,18 @@ export function Crop(props: ICropProps) {
             ),
           );
         }
-        requestAnimationFrame(commit.bind(null, nBox));
+        const box = nBox.toDataBox();
+        rAFId = requestAnimationFrame(() => {
+          dataBox$Ref.current.notify(box);
+        });
       }
     };
 
     const handleUp = () => {
       if (moved) {
-        if (props.onEnd) {
+        if (onEndProp && nBoxRef.current) {
           const { inner, outer } = nBoxRef.current;
-          props.onEnd(
+          onEndProp(
             new DOMRectReadOnly(
               inner.left - outer.left,
               inner.top - outer.top,
@@ -208,100 +220,119 @@ export function Crop(props: ICropProps) {
     return () => {
       document.removeEventListener("mousemove", handleMove);
       document.removeEventListener("mouseup", handleUp);
+      rAFId && cancelAnimationFrame(rAFId);
     };
-  }, [reactId]);
-
-  const handleStart = useCallback((dir: IDirection) => {
-    movingHandle.current = dir;
   }, []);
 
-  const handles = useMemo(() => {
-    const dirs: IDirection[] = props.handles ?? [
-      "left",
-      "left-top",
-      "top",
-      "right-top",
-      "right",
-      "right-bottom",
-      "bottom",
-      "left-bottom",
-    ];
+  const ctx = useMemo(() => {
+    return {
+      dataBox$: dataBox$Ref.current,
+      onAreaMove: () => {
+        movingArea.current = true;
+      },
+      onHandleDrag: (dir) => {
+        movingHandle.current = dir;
+      },
+    } satisfies ICropContext;
+  }, [dataBox$Ref]);
 
-    return dirs.map((dir) => {
-      return (
-        <Handle
-          key={dir}
-          className={props.handleClassName}
-          dir={dir}
-          onStart={handleStart}
-        />
-      );
+  return (
+    <div ref={contentBoxRef} className={props.className} style={props.style}>
+      <CropContext.Provider value={ctx}>{props.children}</CropContext.Provider>
+    </div>
+  );
+}
+
+export function CropMask(props: {
+  fill?: string;
+  fillOpacity?: number;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  const ctx = useCropContext();
+  const id = useId();
+  const maskRectRef = useRef<SVGRectElement>(null);
+
+  useLayoutEffect(() => {
+    return ctx.dataBox$.subscribe(({ outer, inner }) => {
+      const maskRect = maskRectRef.current;
+      if (maskRect) {
+        maskRect.setAttribute("x", inner.left - outer.left + "px");
+        maskRect.setAttribute("y", inner.top - outer.top + "px");
+        maskRect.setAttribute("width", inner.width + "px");
+        maskRect.setAttribute("height", inner.height + "px");
+      }
     });
-  }, [handleStart, props.handleClassName, props.handles]);
+  }, [ctx.dataBox$]);
+
+  return (
+    <svg
+      className={props.className}
+      style={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: "100%",
+        height: "100%",
+      }}
+    >
+      <defs>
+        <mask id={id}>
+          <rect width="100%" height="100%" fill="white" />
+          <rect
+            ref={maskRectRef}
+            x={0}
+            y={0}
+            width="100%"
+            height="100%"
+            fill="black"
+          />
+        </mask>
+      </defs>
+      <rect
+        fill={props.fill}
+        fillOpacity={props.fillOpacity ?? 0.5}
+        width="100%"
+        height="100%"
+        mask={`url(#${id})`}
+      />
+    </svg>
+  );
+}
+
+export function CropArea(
+  props: PropsWithChildren<{
+    fill?: string;
+    fillOpacity?: number;
+    className?: string;
+    style?: CSSProperties;
+  }>,
+) {
+  const ctx = useCropContext();
+  const clipRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    return ctx.dataBox$.subscribe(({ outer, inner }) => {
+      const clip = clipRef.current;
+      if (clip) {
+        clip.style.left = inner.left - outer.left + "px";
+        clip.style.top = inner.top - outer.top + "px";
+        clip.style.right = outer.right - inner.right + "px";
+        clip.style.bottom = outer.bottom - inner.bottom + "px";
+      }
+    });
+  }, [ctx.dataBox$]);
 
   return (
     <div
-      className={props.containerClassName}
-      style={{
-        position: "relative",
-        width: "fit-content",
-        height: "fit-content",
-        minWidth,
-        minHeight,
-        ...props.containerStyle,
+      ref={clipRef}
+      className={props.className}
+      style={props.style}
+      onMouseDown={() => {
+        ctx.onAreaMove?.();
       }}
     >
       {props.children}
-
-      <svg
-        ref={contentBoxRef}
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          width: "100%",
-          height: "100%",
-        }}
-      >
-        <defs>
-          <mask id={`${reactId}-mask`}>
-            <rect width="100%" height="100%" fill="white" />
-            <rect
-              id={`${reactId}-mask-rect`}
-              x={0}
-              y={0}
-              width="100%"
-              height="100%"
-              fill="black"
-            />
-          </mask>
-        </defs>
-        <rect
-          fill={props.mask?.fill}
-          fillOpacity={props.mask?.fillOpacity ?? 0.5}
-          width="100%"
-          height="100%"
-          mask={`url(#${reactId}-mask)`}
-        />
-      </svg>
-
-      <div
-        ref={clipRef}
-        className={props.clipClassName}
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          right: 0,
-          bottom: 0,
-          ...props.clipStyle,
-        }}
-        onMouseDown={() => {
-          movingArea.current = true;
-        }}
-      >
-        {handles}
-      </div>
     </div>
   );
 }
