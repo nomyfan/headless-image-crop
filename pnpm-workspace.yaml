@@ -1,3 +1,6 @@
 packages:
   - 'packages/*'
   - 'playground'
+
+catalog:
+  '@callcc/toolkit-js': "~0.1.2"

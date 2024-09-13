@@ -9,7 +9,7 @@
   },
   "private": true,
   "dependencies": {
-    "@callcc/toolkit-js": "~0.1.1",
+    "@callcc/toolkit-js": "catalog:",
     "headless-image-crop": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
