@@ -15,6 +15,26 @@ import type { DataBox } from "./NestedBox";
 import { NestedBox } from "./NestedBox";
 import type { IDirection } from "./types";
 
+class Movement {
+  constructor(
+    public lastPageX: number,
+    public lastPageY: number,
+  ) {}
+
+  onStart(pageX: number, pageY: number) {
+    this.lastPageX = pageX;
+    this.lastPageY = pageY;
+  }
+
+  onMove(pageX: number, pageY: number) {
+    const dx = pageX - this.lastPageX;
+    const dy = pageY - this.lastPageY;
+    this.lastPageX = pageX;
+    this.lastPageY = pageY;
+    return { dx, dy };
+  }
+}
+
 class Subscribable<T> {
   private listeners_: Set<(value: T) => void> = new Set();
 
@@ -33,8 +53,8 @@ class Subscribable<T> {
 }
 
 type ICropContext = {
-  onHandleDrag?: (dir: IDirection) => void;
-  onAreaMove?: () => void;
+  onHandleDrag?: (dir: IDirection, pageX: number, pageY: number) => void;
+  onAreaMove?: (pageX: number, pageY: number) => void;
   dataBox$: Subscribable<DataBox>;
 };
 const CropContext = createContext<ICropContext>({
@@ -58,7 +78,7 @@ export function CropHandle(props: {
       style={props.style}
       onMouseDown={(evt) => {
         evt.stopPropagation();
-        ctx.onHandleDrag?.(dir);
+        ctx.onHandleDrag?.(dir, evt.pageX, evt.pageY);
       }}
     />
   );
@@ -110,6 +130,7 @@ export function Crop(props: ICropProps) {
   const nBoxRef = useMutableRef(() => {
     return new NestedBox(0, 0, 0, 0, 0, 0);
   });
+  const movementRef = useImmutableRef(() => new Movement(0, 0));
 
   const contentBoxRef = useRefCallback(
     (element: Element) => {
@@ -145,48 +166,45 @@ export function Crop(props: ICropProps) {
     let rAFId: number;
 
     const handleMove = (evt: MouseEvent) => {
-      const nBox = nBoxRef.current;
-      if (movingHandle.current) {
-        if (movingHandle.current !== "area") {
-          if (movingHandle.current.includes("left")) {
-            nBox.moveLeftLine(evt.pageX);
-          }
-          if (movingHandle.current.includes("right")) {
-            nBox.moveRightLine(evt.pageX);
-          }
-          if (movingHandle.current.includes("top")) {
-            nBox.moveTopLine(evt.pageY);
-          }
-          if (movingHandle.current.includes("bottom")) {
-            nBox.moveBottomLine(evt.pageY);
-          }
-        } else {
-          if (evt.movementX) {
-            nBox.moveX(evt.movementX);
-          }
-          if (evt) {
-            nBox.moveY(evt.movementY);
-          }
-        }
+      if (!movingHandle.current) {
+        return;
       }
 
-      if (movingHandle.current && !moved) {
+      const nBox = nBoxRef.current;
+      const { dx, dy } = movementRef.current.onMove(evt.pageX, evt.pageY);
+      if (movingHandle.current !== "area") {
+        if (movingHandle.current.includes("left")) {
+          nBox.moveLeftLine(evt.pageX);
+        }
+        if (movingHandle.current.includes("right")) {
+          nBox.moveRightLine(evt.pageX);
+        }
+        if (movingHandle.current.includes("top")) {
+          nBox.moveTopLine(evt.pageY);
+        }
+        if (movingHandle.current.includes("bottom")) {
+          nBox.moveBottomLine(evt.pageY);
+        }
+      } else {
+        nBox.moveX(dx);
+        nBox.moveY(dy);
+      }
+
+      if (!moved) {
         moved = true;
         onStartProp?.(movingHandle.current || undefined);
       }
 
-      if (movingHandle.current) {
-        if (onDragProp) {
-          const { inner, outer } = nBoxRef.current;
-          onDragProp(
-            new DOMRectReadOnly(
-              inner.left - outer.left,
-              inner.top - outer.top,
-              inner.width,
-              inner.height,
-            ),
-          );
-        }
+      if (onDragProp) {
+        const { inner, outer } = nBoxRef.current;
+        onDragProp(
+          new DOMRectReadOnly(
+            inner.left - outer.left,
+            inner.top - outer.top,
+            inner.width,
+            inner.height,
+          ),
+        );
         const box = nBox.toDataBox();
         rAFId = requestAnimationFrame(() => {
           dataBox$Ref.current.notify(box);
@@ -225,11 +243,13 @@ export function Crop(props: ICropProps) {
   const ctx = useMemo(() => {
     return {
       dataBox$: dataBox$Ref.current,
-      onAreaMove: () => {
+      onAreaMove: (pageX, pageY) => {
         movingHandle.current = "area";
+        movementRef.current.onStart(pageX, pageY);
       },
-      onHandleDrag: (dir) => {
+      onHandleDrag: (dir, pageX, pageY) => {
         movingHandle.current = dir;
+        movementRef.current.onStart(pageX, pageY);
       },
     } satisfies ICropContext;
   }, [dataBox$Ref]);
@@ -326,8 +346,8 @@ export function CropArea(
       ref={clipRef}
       className={props.className}
       style={props.style}
-      onMouseDown={() => {
-        ctx.onAreaMove?.();
+      onMouseDown={(evt) => {
+        ctx.onAreaMove?.(evt.pageX, evt.pageY);
       }}
     >
       {props.children}
