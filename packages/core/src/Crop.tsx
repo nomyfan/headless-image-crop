@@ -16,6 +16,9 @@ import type { DataBox } from "./NestedBox";
 import { NestedBox } from "./NestedBox";
 import type { IDirection } from "./types";
 
+const addEventListener = document.addEventListener;
+const removeEventListener = document.removeEventListener;
+
 class Movement {
   lastPageX: number = 0;
   lastPageY: number = 0;
@@ -265,25 +268,21 @@ export function Crop(props: ICropProps) {
       }
     };
 
-    const listen = document.addEventListener;
-
-    listen("mousemove", mouseMoveListener);
-    listen("mouseup", handleUp);
-    listen("touchmove", touchMoveListener, {
+    addEventListener("mousemove", mouseMoveListener);
+    addEventListener("mouseup", handleUp);
+    addEventListener("touchmove", touchMoveListener, {
       passive: false,
     });
-    listen("touchend", handleUp);
-    listen("touchcancel", handleUp);
-    listen("touchstart", touchStartListener);
+    addEventListener("touchend", handleUp);
+    addEventListener("touchcancel", handleUp);
+    addEventListener("touchstart", touchStartListener);
 
     return () => {
-      const unlisten = document.removeEventListener;
-      unlisten("mousemove", mouseMoveListener);
-      unlisten("mouseup", handleUp);
-      unlisten("touchmove", touchMoveListener);
-      unlisten("touchend", handleUp);
-      unlisten("touchcancel", handleUp);
-      unlisten("touchstart", touchStartListener);
+      removeEventListener("mouseup", handleUp);
+      removeEventListener("touchmove", touchMoveListener);
+      removeEventListener("touchend", handleUp);
+      removeEventListener("touchcancel", handleUp);
+      removeEventListener("touchstart", touchStartListener);
       rAFId && cancelAnimationFrame(rAFId);
     };
   }, []);
@@ -293,6 +292,7 @@ export function Crop(props: ICropProps) {
       dataBox$: dataBox$Ref.current,
       onDragStart: (target, pageX, pageY) => {
         if (!targetRef.current) {
+          // TODO: bind mousemove or touchmove
           targetRef.current = target;
           movementRef.current.onStart(pageX, pageY);
         }
