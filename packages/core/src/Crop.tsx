@@ -73,7 +73,7 @@ export type ICropProps = PropsWithChildren<{
    * It's your responsibility to make sure the callback is stable.
    * @param dir
    */
-  onStart?: (dir?: IDirection) => void;
+  onStart?: (dir?: IDirection | "area") => void;
   /**
    * It's your responsibility to make sure the callback is stable.
    * @param rect
@@ -138,8 +138,7 @@ export function Crop(props: ICropProps) {
     [minHeight, minWidth],
   );
 
-  const movingArea = useRef(false);
-  const movingHandle = useRef<"" | IDirection>("");
+  const movingHandle = useRef<"" | "area" | IDirection>("");
 
   useLayoutEffect(() => {
     let moved = false;
@@ -148,35 +147,35 @@ export function Crop(props: ICropProps) {
     const handleMove = (evt: MouseEvent) => {
       const nBox = nBoxRef.current;
       if (movingHandle.current) {
-        if (movingHandle.current.includes("left")) {
-          nBox.moveLeftLine(evt.pageX);
-        }
-        if (movingHandle.current.includes("right")) {
-          nBox.moveRightLine(evt.pageX);
-        }
-        if (movingHandle.current.includes("top")) {
-          nBox.moveTopLine(evt.pageY);
-        }
-        if (movingHandle.current.includes("bottom")) {
-          nBox.moveBottomLine(evt.pageY);
+        if (movingHandle.current !== "area") {
+          if (movingHandle.current.includes("left")) {
+            nBox.moveLeftLine(evt.pageX);
+          }
+          if (movingHandle.current.includes("right")) {
+            nBox.moveRightLine(evt.pageX);
+          }
+          if (movingHandle.current.includes("top")) {
+            nBox.moveTopLine(evt.pageY);
+          }
+          if (movingHandle.current.includes("bottom")) {
+            nBox.moveBottomLine(evt.pageY);
+          }
+        } else {
+          if (evt.movementX) {
+            nBox.moveX(evt.movementX);
+          }
+          if (evt) {
+            nBox.moveY(evt.movementY);
+          }
         }
       }
 
-      if (movingArea.current) {
-        if (evt.movementX) {
-          nBox.moveX(evt.movementX);
-        }
-        if (evt) {
-          nBox.moveY(evt.movementY);
-        }
-      }
-
-      if ((movingHandle.current || movingArea.current) && !moved) {
+      if (movingHandle.current && !moved) {
         moved = true;
         onStartProp?.(movingHandle.current || undefined);
       }
 
-      if (movingHandle.current || movingArea.current) {
+      if (movingHandle.current) {
         if (onDragProp) {
           const { inner, outer } = nBoxRef.current;
           onDragProp(
@@ -211,7 +210,6 @@ export function Crop(props: ICropProps) {
       }
       moved = false;
       movingHandle.current = "";
-      movingArea.current = false;
     };
 
     document.addEventListener("mousemove", handleMove);
@@ -228,7 +226,7 @@ export function Crop(props: ICropProps) {
     return {
       dataBox$: dataBox$Ref.current,
       onAreaMove: () => {
-        movingArea.current = true;
+        movingHandle.current = "area";
       },
       onHandleDrag: (dir) => {
         movingHandle.current = dir;
