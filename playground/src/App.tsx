@@ -67,10 +67,10 @@ function Mirror(props: { file?: File }) {
   }
 
   return (
-    <div className="flex touch-none">
+    <div className="flex">
       <Crop
         key={key}
-        className="select-none flex-basis-0 flex-grow relative w-fit h-fit"
+        className="select-none flex-basis-0 flex-grow relative w-fit h-fit touch-none"
         minHeight={24}
         minWidth={24}
         onStart={() => {

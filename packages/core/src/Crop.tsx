@@ -24,10 +24,10 @@ class Movement {
   /**
    * Set to non-empty when starting dragging.
    */
-  public target: IDirection | "area" | "" = "";
+  target: IDirection | "area" | "" = "";
   nBox = new NestedBox(0, 0, 0, 0);
   private moved_ = false;
-  public events$ = new Subscribable<
+  events$ = new Subscribable<
     | {
         topic: "start";
         payload: IDirection | "area";
@@ -289,7 +289,7 @@ export function Crop(props: ICropProps) {
       },
     );
 
-    const unsubscribe = movementRef.current.events$.subscribe((evt) => {
+    return movementRef.current.events$.subscribe((evt) => {
       if (evt.topic === "start" && onStartProp) {
         onStartProp(evt.payload);
       } else if (evt.topic === "move" && onDragProp) {
@@ -315,10 +315,6 @@ export function Crop(props: ICropProps) {
         );
       }
     });
-
-    return () => {
-      unsubscribe();
-    };
   }, []);
 
   const ctx = useMemo(() => {
