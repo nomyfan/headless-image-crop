@@ -1,5 +1,4 @@
 import { useImmutableRef } from "@callcc/toolkit-js/react/useImmutableRef";
-import { useMutableRef } from "@callcc/toolkit-js/react/useMutableRef";
 import { useRefCallback } from "@callcc/toolkit-js/react/useRefCallback";
 import { throttle } from "@callcc/toolkit-js/throttle";
 import type { CSSProperties, PropsWithChildren } from "react";
@@ -16,24 +15,127 @@ import type { DataBox } from "./NestedBox";
 import { NestedBox } from "./NestedBox";
 import type { IDirection } from "./types";
 
-const addEventListener = document.addEventListener;
-const removeEventListener = document.removeEventListener;
+const addEventListener = document.addEventListener.bind(document);
+const removeEventListener = document.removeEventListener.bind(document);
 
 class Movement {
-  lastPageX: number = 0;
-  lastPageY: number = 0;
+  private lastPageX_ = 0;
+  private lastPageY_ = 0;
+  /**
+   * Set to non-empty when starting dragging.
+   */
+  public target: IDirection | "area" | "" = "";
+  nBox = new NestedBox(0, 0, 0, 0);
+  private moved_ = false;
+  public events$ = new Subscribable<
+    | {
+        topic: "start";
+        payload: IDirection | "area";
+      }
+    | {
+        topic: "move" | "end";
+        payload: DataBox;
+      }
+  >();
 
-  onStart(pageX: number, pageY: number) {
-    this.lastPageX = pageX;
-    this.lastPageY = pageY;
+  onStart(
+    type: "mouse" | "touch",
+    target: IDirection | "area",
+    pageX: number,
+    pageY: number,
+  ) {
+    // Already started.
+    if (this.target) return;
+
+    this.target = target;
+    this.lastPageX_ = pageX;
+    this.lastPageY_ = pageY;
+
+    if (type === "mouse") {
+      const mousemove = (evt: MouseEvent) => {
+        if (!this.target) return;
+
+        this.onMove(this.target, evt.pageX, evt.pageY);
+      };
+      const mouseup = () => {
+        if (!this.target) return;
+
+        removeEventListener("mousemove", mousemove);
+        removeEventListener("mouseup", mouseup);
+        this.onEnd();
+      };
+
+      addEventListener("mousemove", mousemove);
+      addEventListener("mouseup", mouseup);
+    } else if (type === "touch") {
+      const touchend = () => {
+        if (!this.target) return;
+
+        removeEventListener("touchstart", touchstart);
+        removeEventListener("touchmove", touchmove);
+        removeEventListener("touchend", touchend);
+        removeEventListener("touchcancel", touchend);
+        this.onEnd();
+      };
+      const touchstart = (evt: TouchEvent) => {
+        // Cancel if there are multiple touches.
+        if (evt.touches.length > 1 && this.target) {
+          touchend();
+        }
+      };
+      const touchmove = (evt: TouchEvent) => {
+        if (evt.touches.length === 1 && this.target) {
+          this.onMove(this.target, evt.touches[0].pageX, evt.touches[0].pageY);
+        }
+      };
+
+      addEventListener("touchstart", touchstart);
+      addEventListener("touchmove", touchmove);
+      addEventListener("touchend", touchend);
+      addEventListener("touchcancel", touchend);
+    }
   }
 
-  onMove(pageX: number, pageY: number) {
-    const dx = pageX - this.lastPageX;
-    const dy = pageY - this.lastPageY;
-    this.lastPageX = pageX;
-    this.lastPageY = pageY;
-    return { dx, dy };
+  private onMove(target: "area" | IDirection, pageX: number, pageY: number) {
+    const nBox = this.nBox;
+
+    const dx = pageX - this.lastPageX_;
+    const dy = pageY - this.lastPageY_;
+    this.lastPageX_ = pageX;
+    this.lastPageY_ = pageY;
+    if (target !== "area") {
+      if (target.includes("left")) {
+        nBox.moveLeftLine(pageX);
+      }
+      if (target.includes("right")) {
+        nBox.moveRightLine(pageX);
+      }
+      if (target.includes("top")) {
+        nBox.moveTopLine(pageY);
+      }
+      if (target.includes("bottom")) {
+        nBox.moveBottomLine(pageY);
+      }
+    } else {
+      nBox.moveX(dx);
+      nBox.moveY(dy);
+    }
+
+    if (!this.moved_) {
+      this.moved_ = true;
+      this.events$.notify({ topic: "start", payload: target });
+    }
+
+    this.events$.notify({ topic: "move", payload: this.nBox.toDataBox() });
+  }
+
+  private onEnd() {
+    if (this.moved_) {
+      this.events$.notify({ topic: "end", payload: this.nBox.toDataBox() });
+    }
+
+    this.moved_ = false;
+    this.target = "";
   }
 }
 
@@ -56,6 +158,7 @@ class Subscribable<T> {
 
 type ICropContext = {
   onDragStart?: (
+    type: "mouse" | "touch",
     target: IDirection | "area",
     pageX: number,
     pageY: number,
@@ -82,12 +185,16 @@ export function CropHandle(props: {
       data-handle-dir={dir}
       style={props.style}
       onMouseDown={(evt) => {
-        evt.stopPropagation();
-        ctx.onDragStart?.(dir, evt.pageX, evt.pageY);
+        ctx.onDragStart?.("mouse", dir, evt.pageX, evt.pageY);
       }}
       onTouchStart={(evt) => {
         if (evt.touches.length === 1) {
-          ctx.onDragStart?.(dir, evt.touches[0].pageX, evt.touches[0].pageY);
+          ctx.onDragStart?.(
+            "touch",
+            dir,
+            evt.touches[0].pageX,
+            evt.touches[0].pageY,
+          );
         }
       }}
     />
@@ -137,19 +244,15 @@ export function Crop(props: ICropProps) {
   } = props;
 
   const dataBox$Ref = useImmutableRef(() => new Subscribable<DataBox>());
-  const nBoxRef = useMutableRef(() => {
-    return new NestedBox(0, 0, 0, 0, 0, 0);
-  });
   const movementRef = useImmutableRef(() => new Movement());
-  const targetRef = useRef<"" | "area" | IDirection>("");
 
   const contentBoxRef = useRefCallback(
     (element: Element) => {
       const observer = new ResizeObserver((entries) => {
         const rect = entries[0].target.getBoundingClientRect();
-        const rectPrev = nBoxRef.current.outer;
+        const rectPrev = movementRef.current.nBox.outer;
         if (!rectPrev.equal(rect)) {
-          nBoxRef.current = new NestedBox(
+          movementRef.current.nBox = new NestedBox(
             rect.left,
             rect.top,
             rect.right,
@@ -159,7 +262,7 @@ export function Crop(props: ICropProps) {
             initialRect,
           );
           if (initialRect) {
-            dataBox$Ref.current.notify(nBoxRef.current.toDataBox());
+            dataBox$Ref.current.notify(movementRef.current.nBox.toDataBox());
           }
         }
       });
@@ -171,10 +274,9 @@ export function Crop(props: ICropProps) {
   );
 
   useLayoutEffect(() => {
-    let moved = false;
     let rAFId: number;
 
-    const notify = throttle(
+    const notifyDataBoxChanged = throttle(
       (box: DataBox) => {
         dataBox$Ref.current.notify(box);
       },
@@ -187,39 +289,11 @@ export function Crop(props: ICropProps) {
       },
     );
 
-    const handleMove = (pageX: number, pageY: number) => {
-      if (!targetRef.current) {
-        return;
-      }
-
-      const movement = movementRef.current;
-      const nBox = nBoxRef.current;
-      const { dx, dy } = movementRef.current.onMove(pageX, pageY);
-      if (targetRef.current !== "area") {
-        if (targetRef.current.includes("left")) {
-          nBox.moveLeftLine(movement.lastPageX);
-        }
-        if (targetRef.current.includes("right")) {
-          nBox.moveRightLine(movement.lastPageX);
-        }
-        if (targetRef.current.includes("top")) {
-          nBox.moveTopLine(movement.lastPageY);
-        }
-        if (targetRef.current.includes("bottom")) {
-          nBox.moveBottomLine(movement.lastPageY);
-        }
-      } else {
-        nBox.moveX(dx);
-        nBox.moveY(dy);
-      }
-
-      if (!moved) {
-        moved = true;
-        onStartProp?.(targetRef.current);
-      }
-
-      if (onDragProp) {
-        const { inner, outer } = nBoxRef.current;
+    const unsubscribe = movementRef.current.events$.subscribe((evt) => {
+      if (evt.topic === "start" && onStartProp) {
+        onStartProp(evt.payload);
+      } else if (evt.topic === "move" && onDragProp) {
+        const { inner, outer } = evt.payload;
         onDragProp(
           new DOMRectReadOnly(
             inner.left - outer.left,
@@ -228,74 +302,30 @@ export function Crop(props: ICropProps) {
             inner.height,
           ),
         );
-        notify(nBox.toDataBox());
+        notifyDataBoxChanged(evt.payload);
+      } else if (evt.topic === "end" && onEndProp) {
+        const { inner, outer } = evt.payload;
+        onEndProp(
+          new DOMRectReadOnly(
+            inner.left - outer.left,
+            inner.top - outer.top,
+            inner.width,
+            inner.height,
+          ),
+        );
       }
-    };
-
-    const handleUp = () => {
-      if (moved) {
-        if (onEndProp && nBoxRef.current) {
-          const { inner, outer } = nBoxRef.current;
-          onEndProp(
-            new DOMRectReadOnly(
-              inner.left - outer.left,
-              inner.top - outer.top,
-              inner.width,
-              inner.height,
-            ),
-          );
-        }
-      }
-      moved = false;
-      targetRef.current = "";
-    };
-
-    const mouseMoveListener = (evt: MouseEvent) => {
-      handleMove(evt.pageX, evt.pageY);
-    };
-
-    const touchMoveListener = (evt: TouchEvent) => {
-      if (evt.touches.length === 1) {
-        evt.preventDefault(); // Prevent scrolling.
-        handleMove(evt.touches[0].pageX, evt.touches[0].pageY);
-      }
-    };
-
-    const touchStartListener = (evt: TouchEvent) => {
-      if (evt.touches.length > 1) {
-        // Stop if there are multiple touches.
-        handleUp();
-      }
-    };
-
-    addEventListener("mousemove", mouseMoveListener);
-    addEventListener("mouseup", handleUp);
-    addEventListener("touchmove", touchMoveListener, {
-      passive: false,
     });
-    addEventListener("touchend", handleUp);
-    addEventListener("touchcancel", handleUp);
-    addEventListener("touchstart", touchStartListener);
 
     return () => {
-      removeEventListener("mouseup", handleUp);
-      removeEventListener("touchmove", touchMoveListener);
-      removeEventListener("touchend", handleUp);
-      removeEventListener("touchcancel", handleUp);
-      removeEventListener("touchstart", touchStartListener);
-      rAFId && cancelAnimationFrame(rAFId);
+      unsubscribe();
     };
   }, []);
 
   const ctx = useMemo(() => {
     return {
       dataBox$: dataBox$Ref.current,
-      onDragStart: (target, pageX, pageY) => {
-        if (!targetRef.current) {
-          // TODO: bind mousemove or touchmove
-          targetRef.current = target;
-          movementRef.current.onStart(pageX, pageY);
-        }
+      onDragStart: (type, target, pageX, pageY) => {
+        movementRef.current.onStart(type, target, pageX, pageY);
       },
     } satisfies ICropContext;
   }, [dataBox$Ref, movementRef]);
@@ -393,11 +423,16 @@ export function CropArea(
       className={props.className}
       style={props.style}
       onMouseDown={(evt) => {
-        ctx.onDragStart?.("area", evt.pageX, evt.pageY);
+        ctx.onDragStart?.("mouse", "area", evt.pageX, evt.pageY);
       }}
       onTouchStart={(evt) => {
         if (evt.touches.length === 1) {
-          ctx.onDragStart?.("area", evt.touches[0].pageX, evt.touches[0].pageY);
+          ctx.onDragStart?.(
+            "touch",
+            "area",
+            evt.touches[0].pageX,
+            evt.touches[0].pageY,
+          );
         }
       }}
     >

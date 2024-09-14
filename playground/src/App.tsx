@@ -67,7 +67,7 @@ function Mirror(props: { file?: File }) {
   }
 
   return (
-    <div className="flex">
+    <div className="flex touch-none">
       <Crop
         key={key}
         className="select-none flex-basis-0 flex-grow relative w-fit h-fit"
