@@ -1,6 +1,6 @@
 {
   "name": "headless-image-crop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "scripts": {
     "build": "pnpm tsc -p ./tsconfig.json",
     "dev": "pnpm tsc -w -p ./tsconfig.json"
