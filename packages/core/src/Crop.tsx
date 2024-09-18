@@ -11,8 +11,8 @@ import {
   useContext,
 } from "react";
 
-import type { DataBox } from "./NestedBox";
-import { NestedBox } from "./NestedBox";
+import type { DataBox } from "./ClampBox";
+import { ClampBox } from "./ClampBox";
 import type { IDirection } from "./types";
 
 const addEventListener = document.addEventListener.bind(document);
@@ -25,7 +25,7 @@ class Movement {
    * Set to non-empty when starting dragging.
    */
   target: IDirection | "area" | "" = "";
-  nBox = new NestedBox(0, 0, 0, 0);
+  clampBox = new ClampBox(0, 0, 0, 0);
   private moved_ = false;
   events$ = new Subscribable<
     | {
@@ -97,7 +97,7 @@ class Movement {
   }
 
   private onMove(target: "area" | IDirection, pageX: number, pageY: number) {
-    const nBox = this.nBox;
+    const clampBox = this.clampBox;
 
     const dx = pageX - this.lastPageX_;
     const dy = pageY - this.lastPageY_;
@@ -105,20 +105,20 @@ class Movement {
     this.lastPageY_ = pageY;
     if (target !== "area") {
       if (target.includes("left")) {
-        nBox.moveLeftLine(pageX);
+        clampBox.moveLeftLine(pageX);
       }
       if (target.includes("right")) {
-        nBox.moveRightLine(pageX);
+        clampBox.moveRightLine(pageX);
       }
       if (target.includes("top")) {
-        nBox.moveTopLine(pageY);
+        clampBox.moveTopLine(pageY);
       }
       if (target.includes("bottom")) {
-        nBox.moveBottomLine(pageY);
+        clampBox.moveBottomLine(pageY);
       }
     } else {
-      nBox.moveX(dx);
-      nBox.moveY(dy);
+      clampBox.moveX(dx);
+      clampBox.moveY(dy);
     }
 
     if (!this.moved_) {
@@ -126,12 +126,12 @@ class Movement {
       this.events$.notify({ topic: "start", payload: target });
     }
 
-    this.events$.notify({ topic: "move", payload: this.nBox.toDataBox() });
+    this.events$.notify({ topic: "move", payload: this.clampBox.toDataBox() });
   }
 
   private onEnd() {
     if (this.moved_) {
-      this.events$.notify({ topic: "end", payload: this.nBox.toDataBox() });
+      this.events$.notify({ topic: "end", payload: this.clampBox.toDataBox() });
     }
 
     this.moved_ = false;
@@ -250,9 +250,9 @@ export function Crop(props: ICropProps) {
     (element: Element) => {
       const observer = new ResizeObserver((entries) => {
         const rect = entries[0].target.getBoundingClientRect();
-        const rectPrev = movementRef.current.nBox.outer;
+        const rectPrev = movementRef.current.clampBox.outer;
         if (!rectPrev.equal(rect)) {
-          movementRef.current.nBox = new NestedBox(
+          movementRef.current.clampBox = new ClampBox(
             rect.left,
             rect.top,
             rect.right,
@@ -262,7 +262,9 @@ export function Crop(props: ICropProps) {
             initialRect,
           );
           if (initialRect) {
-            dataBox$Ref.current.notify(movementRef.current.nBox.toDataBox());
+            dataBox$Ref.current.notify(
+              movementRef.current.clampBox.toDataBox(),
+            );
           }
         }
       });

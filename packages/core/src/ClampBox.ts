@@ -7,18 +7,8 @@ export type DataBox = {
   outer: DataRect;
 };
 
-export class NestedBox {
-  /**
-   * Size and position of inner box in the viewport.
-   * Gain via `getBoundingClientRect`.
-   * @private
-   */
+export class ClampBox {
   private readonly _inner: DataRect;
-  /**
-   * Size and position of outer box in the viewport.
-   * Gain via `getBoundingClientRect`.
-   * @private
-   */
   private readonly _outer: DataRect;
 
   private readonly _minWidth: number;
@@ -44,8 +34,8 @@ export class NestedBox {
     this._inner = new DataRect(left, top, right, bottom);
     this._outer = new DataRect(left, top, right, bottom);
 
-    this._minWidth = minWidth;
-    this._minHeight = minHeight;
+    this._minWidth = clamp(0, right - left, minWidth);
+    this._minHeight = clamp(0, bottom - top, minHeight);
 
     if (offset) {
       const ml =
@@ -77,10 +67,6 @@ export class NestedBox {
 
   get outer() {
     return this._outer;
-  }
-
-  get inner() {
-    return this._inner;
   }
 
   moveLeftLine(x: number) {
